@@ -1,0 +1,1943 @@
+<!--
+Investigation Tracker — single-file app (index.html)
+- Works offline
+- Stores data in browser localStorage
+- Export/Import JSON (full backup)
+- Export CSV (events + evidence)
+- Built for personal investigations + “lawfare incident” logging
+- No dependencies
+
+Deploy:
+1) Save this as index.html in a GitHub repo
+2) Enable GitHub Pages (Settings → Pages → Deploy from branch → main / root)
+3) Open the Pages URL
+
+Security note:
+- Data lives in your browser unless you export it.
+- If you need cross-device sync, you can add a backend later.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Investigation Tracker</title>
+  <meta name="color-scheme" content="light dark">
+  <style>
+    :root{
+      --bg: #0b0f14;
+      --panel: #101826;
+      --panel2: #0f1622;
+      --text: #e7edf5;
+      --muted: #93a4b8;
+      --border: rgba(255,255,255,.10);
+      --accent: #7aa8ff;
+      --good:#34d399;
+      --warn:#fbbf24;
+      --bad:#fb7185;
+      --chip:#152235;
+      --shadow: 0 10px 30px rgba(0,0,0,.35);
+      --radius: 16px;
+      --radius2: 20px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+    }
+    @media (prefers-color-scheme: light){
+      :root{
+        --bg:#f6f8fb;
+        --panel:#ffffff;
+        --panel2:#ffffff;
+        --text:#0b1220;
+        --muted:#4b5b72;
+        --border: rgba(11,18,32,.12);
+        --accent:#2f6bff;
+        --chip:#eef3ff;
+        --shadow: 0 10px 30px rgba(11,18,32,.08);
+      }
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family:var(--sans);
+      background: radial-gradient(1200px 700px at 20% -10%, rgba(122,168,255,.15), transparent 60%),
+                  radial-gradient(1000px 600px at 80% 0%, rgba(52,211,153,.10), transparent 55%),
+                  var(--bg);
+      color:var(--text);
+    }
+    a{color:var(--accent); text-decoration:none}
+    a:hover{text-decoration:underline}
+    .wrap{max-width:1200px; margin:0 auto; padding:18px 18px 38px}
+    header{
+      display:flex; gap:14px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap;
+      padding:16px 16px 10px;
+    }
+    .brand{display:flex; flex-direction:column; gap:6px}
+    .brand h1{
+      margin:0;
+      font-size:20px;
+      letter-spacing:.2px;
+    }
+    .brand .sub{color:var(--muted); font-size:13px; line-height:1.35; max-width:760px}
+    .top-actions{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+    button, .btn{
+      border:1px solid var(--border);
+      background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,0));
+      color:var(--text);
+      padding:10px 12px;
+      border-radius:12px;
+      cursor:pointer;
+      box-shadow: none;
+      font-weight:600;
+      font-size:13px;
+      transition: transform .06s ease, border-color .15s ease, background .15s ease;
+      user-select:none;
+    }
+    button:hover{border-color: rgba(122,168,255,.45)}
+    button:active{transform: translateY(1px)}
+    button.primary{
+      border-color: rgba(122,168,255,.45);
+      background: linear-gradient(180deg, rgba(122,168,255,.25), rgba(122,168,255,.08));
+    }
+    button.danger{
+      border-color: rgba(251,113,133,.45);
+      background: linear-gradient(180deg, rgba(251,113,133,.18), rgba(251,113,133,.06));
+    }
+    button.ghost{
+      background: transparent;
+    }
+    .grid{
+      display:grid;
+      grid-template-columns: 320px 1fr;
+      gap:14px;
+      align-items:start;
+      padding:0 16px;
+    }
+    @media (max-width: 980px){
+      .grid{grid-template-columns: 1fr; }
+    }
+    .card{
+      background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,0));
+      border:1px solid var(--border);
+      border-radius: var(--radius2);
+      box-shadow: var(--shadow);
+      overflow:hidden;
+    }
+    .card .hd{
+      padding:14px 14px 10px;
+      display:flex; justify-content:space-between; align-items:center; gap:10px;
+      border-bottom:1px solid var(--border);
+      background: rgba(255,255,255,.02);
+    }
+    .card .hd h2{
+      margin:0; font-size:14px; letter-spacing:.25px;
+      display:flex; gap:8px; align-items:center;
+    }
+    .pill{
+      display:inline-flex; align-items:center; gap:6px;
+      padding:5px 9px; border-radius:999px; border:1px solid var(--border);
+      background: rgba(255,255,255,.03);
+      font-size:12px; color:var(--muted);
+      white-space:nowrap;
+    }
+    .card .bd{padding:12px 14px 14px}
+    .row{display:flex; gap:10px; align-items:center}
+    .row.wrap{flex-wrap:wrap}
+    .col{display:flex; flex-direction:column; gap:6px}
+    label{font-size:12px; color:var(--muted)}
+    input, select, textarea{
+      width:100%;
+      padding:10px 10px;
+      border-radius:12px;
+      border:1px solid var(--border);
+      background: rgba(0,0,0,.15);
+      color: var(--text);
+      outline:none;
+      font-size:13px;
+    }
+    @media (prefers-color-scheme: light){
+      input, select, textarea{ background: rgba(11,18,32,.03); }
+    }
+    textarea{min-height:90px; resize: vertical}
+    .muted{color:var(--muted); font-size:12px; line-height:1.4}
+    .list{display:flex; flex-direction:column; gap:10px}
+    .case-item{
+      padding:10px 10px;
+      border-radius:14px;
+      border:1px solid var(--border);
+      background: rgba(255,255,255,.03);
+      cursor:pointer;
+      transition: border-color .15s ease, transform .06s ease;
+    }
+    .case-item:hover{border-color: rgba(122,168,255,.35)}
+    .case-item:active{transform: translateY(1px)}
+    .case-item.active{
+      border-color: rgba(122,168,255,.55);
+      background: linear-gradient(180deg, rgba(122,168,255,.17), rgba(122,168,255,.05));
+    }
+    .case-title{font-weight:800; font-size:13px; margin-bottom:4px}
+    .case-meta{display:flex; gap:8px; flex-wrap:wrap; color:var(--muted); font-size:12px}
+    .chip{
+      display:inline-flex; align-items:center;
+      padding:4px 8px;
+      border-radius:999px;
+      background: var(--chip);
+      border:1px solid var(--border);
+      color: var(--muted);
+      font-size:12px;
+      gap:6px;
+    }
+    .chip.good{color: var(--good); border-color: rgba(52,211,153,.35)}
+    .chip.warn{color: var(--warn); border-color: rgba(251,191,36,.35)}
+    .chip.bad{color: var(--bad); border-color: rgba(251,113,133,.35)}
+    .split{
+      display:grid;
+      grid-template-columns: 1.2fr .8fr;
+      gap:14px;
+    }
+    @media (max-width: 980px){
+      .split{grid-template-columns: 1fr;}
+    }
+    .tabs{display:flex; gap:8px; flex-wrap:wrap}
+    .tab{
+      padding:8px 10px;
+      border-radius:999px;
+      border:1px solid var(--border);
+      background: rgba(255,255,255,.03);
+      font-size:12px;
+      color: var(--muted);
+      cursor:pointer;
+      user-select:none;
+    }
+    .tab.active{
+      color: var(--text);
+      border-color: rgba(122,168,255,.55);
+      background: rgba(122,168,255,.12);
+    }
+    .entry{
+      border:1px solid var(--border);
+      border-radius: var(--radius);
+      background: rgba(255,255,255,.03);
+      overflow:hidden;
+    }
+    .entry .eh{
+      display:flex; justify-content:space-between; align-items:flex-start; gap:10px;
+      padding:10px 12px;
+      border-bottom:1px solid var(--border);
+      background: rgba(255,255,255,.02);
+    }
+    .entry .eh .left{display:flex; flex-direction:column; gap:4px}
+    .entry .eh .title{font-weight:800; font-size:13px}
+    .entry .eh .meta{color:var(--muted); font-size:12px; display:flex; gap:8px; flex-wrap:wrap}
+    .entry .eb{padding:10px 12px; display:flex; flex-direction:column; gap:10px}
+    .kv{display:grid; grid-template-columns: 150px 1fr; gap:8px; font-size:12px}
+    .kv .k{color:var(--muted)}
+    .kv .v{font-family: var(--mono); font-size:12px; overflow-wrap:anywhere}
+    .actions{display:flex; gap:8px; flex-wrap:wrap}
+    .hr{height:1px; background: var(--border); margin:10px 0}
+    .footer-note{
+      padding:12px 16px;
+      color: var(--muted);
+      font-size:12px;
+      border-top:1px solid var(--border);
+      display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;
+    }
+    .kbd{font-family:var(--mono); font-size:11px; border:1px solid var(--border); border-bottom-width:2px; padding:2px 6px; border-radius:8px; color:var(--muted)}
+    .toast{
+      position: fixed;
+      bottom: 14px; left: 50%;
+      transform: translateX(-50%);
+      padding:10px 12px;
+      border-radius: 14px;
+      border:1px solid var(--border);
+      background: rgba(0,0,0,.55);
+      backdrop-filter: blur(10px);
+      color: var(--text);
+      box-shadow: var(--shadow);
+      font-size:12px;
+      display:none;
+      max-width: 92vw;
+      z-index: 1000;
+    }
+    @media (prefers-color-scheme: light){
+      .toast{background: rgba(255,255,255,.85)}
+    }
+    .mono{font-family:var(--mono)}
+    .small{font-size:12px}
+    .right{margin-left:auto}
+    .danger-text{color: var(--bad)}
+    .hidden{display:none !important}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="card" style="margin:0 16px 14px;">
+      <div class="hd" style="border-bottom:0; background:transparent;">
+        <div class="brand">
+          <h1>Investigation Tracker</h1>
+          <div class="sub">
+            Offline-first logging for investigations and lawfare incidents:
+            <span class="mono">cases</span>, <span class="mono">timeline events</span>, <span class="mono">evidence</span>, <span class="mono">tasks</span>, <span class="mono">contacts</span>.
+            Data stays in your browser unless you export.
+          </div>
+        </div>
+        <div class="top-actions">
+          <button class="primary" id="btnNewCase">+ New Case</button>
+          <button id="btnExportJson">Export JSON</button>
+          <button id="btnImportJson">Import JSON</button>
+          <input id="fileImport" type="file" accept="application/json" class="hidden" />
+          <button id="btnExportCsv">Export CSV</button>
+          <button class="danger" id="btnResetAll" title="Deletes all local data">Reset Local Data</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="grid">
+      <!-- LEFT: Cases -->
+      <section class="card">
+        <div class="hd">
+          <h2>Cases <span class="pill" id="caseCountPill">0</span></h2>
+          <span class="pill">Local-only</span>
+        </div>
+        <div class="bd">
+          <div class="col" style="gap:10px;">
+            <div class="row">
+              <input id="caseSearch" placeholder="Search cases (title, tags, jurisdiction…)" />
+            </div>
+            <div class="row wrap">
+              <span class="chip" title="Filter by status"><span class="mono">Status:</span></span>
+              <select id="caseFilterStatus" style="max-width: 170px;">
+                <option value="">All</option>
+                <option value="Active">Active</option>
+                <option value="Monitoring">Monitoring</option>
+                <option value="Escalated">Escalated</option>
+                <option value="Litigation">Litigation</option>
+                <option value="Resolved">Resolved</option>
+                <option value="Dormant">Dormant</option>
+              </select>
+              <span class="chip right" id="selectedCasePill">No case selected</span>
+            </div>
+            <div class="list" id="caseList"></div>
+            <div class="muted">
+              Tip: Keep entries factual. Store originals (letters, PDFs, screenshots) externally and link them as Evidence URLs.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- RIGHT: Case details -->
+      <section class="card">
+        <div class="hd">
+          <h2 id="caseHeader">Case Workspace</h2>
+          <div class="tabs" id="tabs">
+            <div class="tab active" data-tab="overview">Overview</div>
+            <div class="tab" data-tab="timeline">Timeline</div>
+            <div class="tab" data-tab="evidence">Evidence</div>
+            <div class="tab" data-tab="tasks">Tasks</div>
+            <div class="tab" data-tab="contacts">Contacts</div>
+          </div>
+        </div>
+        <div class="bd" id="casePane">
+          <div class="muted">Select a case on the left or create a new one.</div>
+        </div>
+        <div class="footer-note">
+          <div>Shortcuts: <span class="kbd">Ctrl</span> + <span class="kbd">K</span> search, <span class="kbd">Ctrl</span> + <span class="kbd">S</span> save edits</div>
+          <div class="mono">v1.0 (single-file)</div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  const STORAGE_KEY = "investigation_tracker_v1";
+  const nowISO = () => new Date().toISOString();
+  const uid = () => (crypto?.randomUUID ? crypto.randomUUID() : ("id_" + Math.random().toString(16).slice(2) + "_" + Date.now()));
+  const fmtDate = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (isNaN(d)) return iso;
+    return d.toLocaleString(undefined, {year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit"});
+  };
+  const clamp = (s, n=140) => (s||"").length > n ? (s.slice(0,n-1)+"…") : (s||"");
+  const escapeHtml = (s="") => s.replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;");
+
+  const toastEl = document.getElementById("toast");
+  let toastTimer = null;
+  function toast(msg){
+    toastEl.textContent = msg;
+    toastEl.style.display = "block";
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toastEl.style.display = "none"; }, 2400);
+  }
+
+  // ---- Data model
+  const defaultData = () => ({
+    version: 1,
+    created_at: nowISO(),
+    updated_at: nowISO(),
+    cases: []
+  });
+
+  function load(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return defaultData();
+      const data = JSON.parse(raw);
+      if (!data || typeof data !== "object") return defaultData();
+      if (!Array.isArray(data.cases)) data.cases = [];
+      return data;
+    } catch {
+      return defaultData();
+    }
+  }
+  function save(){
+    state.data.updated_at = nowISO();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+    toast("Saved");
+  }
+
+  // ---- App state
+  const state = {
+    data: load(),
+    selectedCaseId: null,
+    activeTab: "overview",
+    caseSearch: "",
+    caseFilterStatus: ""
+  };
+
+  // ---- DOM refs
+  const caseListEl = document.getElementById("caseList");
+  const caseSearchEl = document.getElementById("caseSearch");
+  const caseFilterStatusEl = document.getElementById("caseFilterStatus");
+  const casePaneEl = document.getElementById("casePane");
+  const caseHeaderEl = document.getElementById("caseHeader");
+  const caseCountPillEl = document.getElementById("caseCountPill");
+  const selectedCasePillEl = document.getElementById("selectedCasePill");
+
+  // Buttons
+  document.getElementById("btnNewCase").addEventListener("click", () => openCaseEditor(null));
+  document.getElementById("btnExportJson").addEventListener("click", exportJSON);
+  document.getElementById("btnImportJson").addEventListener("click", () => document.getElementById("fileImport").click());
+  document.getElementById("fileImport").addEventListener("change", importJSON);
+  document.getElementById("btnExportCsv").addEventListener("click", exportCSV);
+  document.getElementById("btnResetAll").addEventListener("click", resetAll);
+
+  // Tabs
+  document.getElementById("tabs").addEventListener("click", (e) => {
+    const tab = e.target.closest(".tab");
+    if (!tab) return;
+    state.activeTab = tab.dataset.tab;
+    renderTabs();
+    renderCasePane();
+  });
+
+  // Search/filter
+  caseSearchEl.addEventListener("input", () => {
+    state.caseSearch = caseSearchEl.value.trim().toLowerCase();
+    renderCaseList();
+  });
+  caseFilterStatusEl.addEventListener("change", () => {
+    state.caseFilterStatus = caseFilterStatusEl.value;
+    renderCaseList();
+  });
+
+  // Keyboard shortcuts
+  window.addEventListener("keydown", (e) => {
+    const isMac = navigator.platform.toLowerCase().includes("mac");
+    const mod = isMac ? e.metaKey : e.ctrlKey;
+
+    if (mod && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      caseSearchEl.focus();
+    }
+    if (mod && e.key.toLowerCase() === "s") {
+      e.preventDefault();
+      save();
+    }
+  });
+
+  // ---- Helpers
+  function getCaseById(id){
+    return state.data.cases.find(c => c.id === id) || null;
+  }
+  function sortByUpdatedDesc(a,b){
+    return (b.updated_at || "").localeCompare(a.updated_at || "");
+  }
+  function statusChipClass(status){
+    if (status === "Resolved") return "good";
+    if (status === "Escalated" || status === "Litigation") return "bad";
+    if (status === "Monitoring") return "warn";
+    return "";
+  }
+  function normalizeTags(s){
+    return (s||"")
+      .split(",")
+      .map(t => t.trim())
+      .filter(Boolean)
+      .filter((t, i, arr) => arr.indexOf(t) === i);
+  }
+
+  // ---- Rendering
+  function render(){
+    // default select first case if none
+    if (!state.selectedCaseId && state.data.cases.length){
+      state.selectedCaseId = state.data.cases[0].id;
+    }
+    renderCaseList();
+    renderTabs();
+    renderCasePane();
+  }
+
+  function renderTabs(){
+    document.querySelectorAll(".tab").forEach(t => {
+      t.classList.toggle("active", t.dataset.tab === state.activeTab);
+    });
+  }
+
+  function renderCaseList(){
+    const cases = [...state.data.cases].sort(sortByUpdatedDesc);
+    const filtered = cases.filter(c => {
+      const q = state.caseSearch;
+      const statusOk = state.caseFilterStatus ? (c.status === state.caseFilterStatus) : true;
+      if (!statusOk) return false;
+      if (!q) return true;
+      const hay = [
+        c.title, c.summary, c.jurisdiction, c.case_number,
+        (c.tags||[]).join(" "),
+        c.primary_issue
+      ].join(" ").toLowerCase();
+      return hay.includes(q);
+    });
+
+    caseCountPillEl.textContent = String(filtered.length);
+
+    caseListEl.innerHTML = filtered.length ? "" : `<div class="muted">No cases yet. Click <span class="mono">New Case</span>.</div>`;
+
+    for (const c of filtered){
+      const active = c.id === state.selectedCaseId;
+      const chipClass = statusChipClass(c.status);
+      const tags = (c.tags||[]).slice(0,3);
+      caseListEl.insertAdjacentHTML("beforeend", `
+        <div class="case-item ${active ? "active" : ""}" data-id="${escapeHtml(c.id)}">
+          <div class="case-title">${escapeHtml(c.title || "Untitled Case")}</div>
+          <div class="case-meta">
+            <span class="chip ${chipClass}">${escapeHtml(c.status || "Active")}</span>
+            ${c.jurisdiction ? `<span class="chip">${escapeHtml(c.jurisdiction)}</span>` : ""}
+            ${c.case_number ? `<span class="chip mono">${escapeHtml(c.case_number)}</span>` : ""}
+            ${tags.map(t => `<span class="chip">${escapeHtml(t)}</span>`).join("")}
+          </div>
+          <div class="muted" style="margin-top:6px">${escapeHtml(clamp(c.summary || "", 120))}</div>
+        </div>
+      `);
+    }
+
+    caseListEl.querySelectorAll(".case-item").forEach(el => {
+      el.addEventListener("click", () => {
+        state.selectedCaseId = el.dataset.id;
+        state.activeTab = "overview";
+        renderCaseList();
+        renderTabs();
+        renderCasePane();
+      });
+    });
+
+    const selected = getCaseById(state.selectedCaseId);
+    selectedCasePillEl.textContent = selected ? `Selected: ${selected.title || "Untitled"}` : "No case selected";
+    caseHeaderEl.textContent = selected ? `Case: ${selected.title || "Untitled"}` : "Case Workspace";
+  }
+
+  function renderCasePane(){
+    const c = getCaseById(state.selectedCaseId);
+    if (!c){
+      casePaneEl.innerHTML = `<div class="muted">Select a case on the left or create a new one.</div>`;
+      return;
+    }
+
+    if (state.activeTab === "overview") return renderOverview(c);
+    if (state.activeTab === "timeline") return renderTimeline(c);
+    if (state.activeTab === "evidence") return renderEvidence(c);
+    if (state.activeTab === "tasks") return renderTasks(c);
+    if (state.activeTab === "contacts") return renderContacts(c);
+  }
+
+  function renderOverview(c){
+    const stats = computeStats(c);
+    casePaneEl.innerHTML = `
+      <div class="split">
+        <div class="card" style="box-shadow:none;">
+          <div class="hd"><h2>Case Details</h2>
+            <div class="actions">
+              <button class="primary" id="btnEditCase">Edit</button>
+              <button id="btnDuplicateCase">Duplicate</button>
+              <button class="danger" id="btnDeleteCase">Delete</button>
+            </div>
+          </div>
+          <div class="bd">
+            <div class="row wrap" style="margin-bottom:10px">
+              <span class="chip ${statusChipClass(c.status)}"><span class="mono">Status:</span> ${escapeHtml(c.status || "Active")}</span>
+              ${c.priority ? `<span class="chip"><span class="mono">Priority:</span> ${escapeHtml(c.priority)}</span>` : ""}
+              ${c.opened_at ? `<span class="chip"><span class="mono">Opened:</span> ${escapeHtml(fmtDate(c.opened_at))}</span>` : ""}
+              ${c.updated_at ? `<span class="chip"><span class="mono">Updated:</span> ${escapeHtml(fmtDate(c.updated_at))}</span>` : ""}
+            </div>
+
+            <div class="col">
+              <label>Summary</label>
+              <div class="muted" style="font-size:13px; color:var(--text); opacity:.9; white-space:pre-wrap">${escapeHtml(c.summary || "")}</div>
+            </div>
+
+            <div class="hr"></div>
+
+            <div class="row" style="gap:12px; flex-wrap:wrap">
+              <div style="flex:1; min-width:230px" class="col">
+                <label>Jurisdiction</label>
+                <div class="mono small">${escapeHtml(c.jurisdiction || "")}</div>
+              </div>
+              <div style="flex:1; min-width:230px" class="col">
+                <label>Case / Docket #</label>
+                <div class="mono small">${escapeHtml(c.case_number || "")}</div>
+              </div>
+              <div style="flex:1; min-width:230px" class="col">
+                <label>Primary Issue</label>
+                <div class="mono small">${escapeHtml(c.primary_issue || "")}</div>
+              </div>
+            </div>
+
+            <div class="hr"></div>
+
+            <div class="col">
+              <label>Tags</label>
+              <div class="row wrap">
+                ${(c.tags||[]).map(t => `<span class="chip">${escapeHtml(t)}</span>`).join("") || `<span class="muted">None</span>`}
+              </div>
+            </div>
+
+            <div class="hr"></div>
+
+            <div class="col">
+              <label>Key Questions / Claims to Verify</label>
+              <div class="muted" style="font-size:13px; color:var(--text); opacity:.9; white-space:pre-wrap">${escapeHtml(c.key_questions || "")}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="box-shadow:none;">
+          <div class="hd"><h2>Snapshot</h2></div>
+          <div class="bd">
+            <div class="col" style="gap:10px">
+              <div class="row wrap">
+                <span class="chip"><span class="mono">Events:</span> ${stats.events}</span>
+                <span class="chip"><span class="mono">Evidence:</span> ${stats.evidence}</span>
+                <span class="chip"><span class="mono">Tasks:</span> ${stats.tasks_total}</span>
+                <span class="chip good"><span class="mono">Done:</span> ${stats.tasks_done}</span>
+              </div>
+
+              <div class="entry">
+                <div class="eh">
+                  <div class="left">
+                    <div class="title">Next Action</div>
+                    <div class="meta">Auto-picked from highest priority open task</div>
+                  </div>
+                </div>
+                <div class="eb">
+                  ${stats.next_task
+                    ? `<div><b>${escapeHtml(stats.next_task.title)}</b></div>
+                       <div class="muted">${escapeHtml(stats.next_task.notes || "")}</div>
+                       <div class="row wrap">
+                         ${stats.next_task.due_at ? `<span class="chip warn"><span class="mono">Due:</span> ${escapeHtml(fmtDate(stats.next_task.due_at))}</span>` : ""}
+                         ${stats.next_task.priority ? `<span class="chip"><span class="mono">Priority:</span> ${escapeHtml(stats.next_task.priority)}</span>` : ""}
+                       </div>`
+                    : `<div class="muted">No open tasks. Add one in the Tasks tab.</div>`
+                  }
+                </div>
+              </div>
+
+              <div class="entry">
+                <div class="eh">
+                  <div class="left">
+                    <div class="title">Quick Add</div>
+                    <div class="meta">Log an event fast (timeline)</div>
+                  </div>
+                </div>
+                <div class="eb">
+                  <div class="row" style="gap:10px; align-items:flex-start">
+                    <input id="quickEventTitle" placeholder="Event title (e.g., “Received Notice of Action Taken”)">
+                  </div>
+                  <div class="row" style="gap:10px; align-items:flex-start">
+                    <textarea id="quickEventNotes" placeholder="Factual notes. Add dates, postmarks, who said what, etc."></textarea>
+                  </div>
+                  <div class="row wrap">
+                    <select id="quickEventType" style="max-width:220px">
+                      <option>Agency Action</option>
+                      <option>Communication</option>
+                      <option>Payment</option>
+                      <option>Deadline</option>
+                      <option>Hearing</option>
+                      <option>Records Request</option>
+                      <option>Evidence Received</option>
+                      <option>Other</option>
+                    </select>
+                    <select id="quickEventSeverity" style="max-width:220px">
+                      <option value="Neutral">Severity: Neutral</option>
+                      <option value="Low">Severity: Low</option>
+                      <option value="Medium">Severity: Medium</option>
+                      <option value="High">Severity: High</option>
+                    </select>
+                    <button class="primary" id="btnQuickAdd">Add Event</button>
+                    <button class="ghost" id="btnJumpTimeline">Go to Timeline</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="muted">
+                Pro tip: Use Evidence entries to log envelope postmarks, letter dates, PDFs, screenshots, and links. Add hashes for chain-of-custody.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById("btnEditCase").onclick = () => openCaseEditor(c.id);
+    document.getElementById("btnDuplicateCase").onclick = () => duplicateCase(c.id);
+    document.getElementById("btnDeleteCase").onclick = () => deleteCase(c.id);
+
+    document.getElementById("btnQuickAdd").onclick = () => {
+      const title = document.getElementById("quickEventTitle").value.trim();
+      const notes = document.getElementById("quickEventNotes").value.trim();
+      const type = document.getElementById("quickEventType").value;
+      const sev = document.getElementById("quickEventSeverity").value.replace("Severity: ", "");
+      if (!title) return toast("Add a title");
+      addTimelineEvent(c.id, { title, notes, type, severity: sev });
+      document.getElementById("quickEventTitle").value = "";
+      document.getElementById("quickEventNotes").value = "";
+      toast("Event added");
+      renderCasePane();
+    };
+    document.getElementById("btnJumpTimeline").onclick = () => {
+      state.activeTab = "timeline";
+      renderTabs();
+      renderCasePane();
+    };
+  }
+
+  function renderTimeline(c){
+    const events = [...(c.timeline||[])].sort((a,b) => (b.when || "").localeCompare(a.when || ""));
+    casePaneEl.innerHTML = `
+      <div class="card" style="box-shadow:none;">
+        <div class="hd">
+          <h2>Timeline</h2>
+          <div class="actions">
+            <button class="primary" id="btnAddEvent">+ Add Event</button>
+          </div>
+        </div>
+        <div class="bd">
+          <div class="row wrap" style="margin-bottom:10px">
+            <input id="timelineSearch" placeholder="Search events (title, notes, type, tags, people…)" style="flex:1; min-width:260px">
+            <select id="timelineType" style="max-width:240px">
+              <option value="">All types</option>
+              <option>Agency Action</option>
+              <option>Communication</option>
+              <option>Payment</option>
+              <option>Deadline</option>
+              <option>Hearing</option>
+              <option>Records Request</option>
+              <option>Evidence Received</option>
+              <option>Other</option>
+            </select>
+            <select id="timelineSeverity" style="max-width:220px">
+              <option value="">All severities</option>
+              <option>Low</option>
+              <option>Medium</option>
+              <option>High</option>
+              <option>Neutral</option>
+            </select>
+          </div>
+
+          <div class="list" id="timelineList">
+            ${events.length ? "" : `<div class="muted">No events yet.</div>`}
+          </div>
+        </div>
+      </div>
+    `;
+
+    const listEl = document.getElementById("timelineList");
+    const searchEl = document.getElementById("timelineSearch");
+    const typeEl = document.getElementById("timelineType");
+    const sevEl = document.getElementById("timelineSeverity");
+
+    const renderList = () => {
+      const q = searchEl.value.trim().toLowerCase();
+      const t = typeEl.value;
+      const s = sevEl.value;
+      const filtered = events.filter(ev => {
+        if (t && ev.type !== t) return false;
+        if (s && ev.severity !== s) return false;
+        if (!q) return true;
+        const hay = [ev.title, ev.notes, ev.type, (ev.tags||[]).join(" "), ev.who, ev.source].join(" ").toLowerCase();
+        return hay.includes(q);
+      });
+
+      listEl.innerHTML = filtered.length ? "" : `<div class="muted">No matching events.</div>`;
+      for (const ev of filtered){
+        listEl.insertAdjacentHTML("beforeend", timelineEntryHTML(ev));
+      }
+      attachEntryHandlers(c.id, "timeline");
+    };
+
+    searchEl.addEventListener("input", renderList);
+    typeEl.addEventListener("change", renderList);
+    sevEl.addEventListener("change", renderList);
+
+    document.getElementById("btnAddEvent").onclick = () => openEventEditor(c.id, null);
+    renderList();
+  }
+
+  function timelineEntryHTML(ev){
+    const sevClass = ev.severity === "High" ? "bad" : ev.severity === "Medium" ? "warn" : ev.severity === "Low" ? "good" : "";
+    return `
+      <div class="entry" data-entry-type="timeline" data-id="${escapeHtml(ev.id)}">
+        <div class="eh">
+          <div class="left">
+            <div class="title">${escapeHtml(ev.title || "Untitled Event")}</div>
+            <div class="meta">
+              <span class="chip ${sevClass}">${escapeHtml(ev.severity || "Neutral")}</span>
+              ${ev.type ? `<span class="chip">${escapeHtml(ev.type)}</span>` : ""}
+              ${ev.when ? `<span class="chip mono">${escapeHtml(fmtDate(ev.when))}</span>` : ""}
+              ${ev.who ? `<span class="chip">${escapeHtml(ev.who)}</span>` : ""}
+            </div>
+          </div>
+          <div class="actions">
+            <button class="ghost" data-action="edit">Edit</button>
+            <button class="danger ghost" data-action="delete">Delete</button>
+          </div>
+        </div>
+        <div class="eb">
+          ${ev.notes ? `<div style="white-space:pre-wrap">${escapeHtml(ev.notes)}</div>` : `<div class="muted">No notes.</div>`}
+          ${(ev.tags && ev.tags.length) ? `<div class="row wrap">${ev.tags.map(t=>`<span class="chip">${escapeHtml(t)}</span>`).join("")}</div>` : ``}
+          ${(ev.source || ev.ref) ? `
+            <div class="kv">
+              ${ev.source ? `<div class="k">Source</div><div class="v">${escapeHtml(ev.source)}</div>` : ``}
+              ${ev.ref ? `<div class="k">Reference</div><div class="v">${escapeHtml(ev.ref)}</div>` : ``}
+            </div>` : ``}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderEvidence(c){
+    const items = [...(c.evidence||[])].sort((a,b)=> (b.date_obtained || "").localeCompare(a.date_obtained || ""));
+    casePaneEl.innerHTML = `
+      <div class="card" style="box-shadow:none;">
+        <div class="hd">
+          <h2>Evidence</h2>
+          <div class="actions">
+            <button class="primary" id="btnAddEvidence">+ Add Evidence</button>
+          </div>
+        </div>
+        <div class="bd">
+          <div class="row wrap" style="margin-bottom:10px">
+            <input id="evidenceSearch" placeholder="Search evidence (type, description, url, hash…)" style="flex:1; min-width:260px">
+            <select id="evidenceType" style="max-width:240px">
+              <option value="">All types</option>
+              <option>Letter</option>
+              <option>Envelope/Postmark</option>
+              <option>Email</option>
+              <option>Call Log</option>
+              <option>Screenshot</option>
+              <option>PDF</option>
+              <option>Filing</option>
+              <option>Payment Record</option>
+              <option>Other</option>
+            </select>
+          </div>
+
+          <div class="list" id="evidenceList">
+            ${items.length ? "" : `<div class="muted">No evidence logged yet.</div>`}
+          </div>
+        </div>
+      </div>
+    `;
+
+    const listEl = document.getElementById("evidenceList");
+    const searchEl = document.getElementById("evidenceSearch");
+    const typeEl = document.getElementById("evidenceType");
+
+    const renderList = () => {
+      const q = searchEl.value.trim().toLowerCase();
+      const t = typeEl.value;
+      const filtered = items.filter(it => {
+        if (t && it.type !== t) return false;
+        if (!q) return true;
+        const hay = [it.type, it.title, it.description, it.url, it.hash, it.source, it.notes].join(" ").toLowerCase();
+        return hay.includes(q);
+      });
+
+      listEl.innerHTML = filtered.length ? "" : `<div class="muted">No matching evidence.</div>`;
+      for (const it of filtered){
+        listEl.insertAdjacentHTML("beforeend", evidenceEntryHTML(it));
+      }
+      attachEntryHandlers(c.id, "evidence");
+    };
+
+    searchEl.addEventListener("input", renderList);
+    typeEl.addEventListener("change", renderList);
+    document.getElementById("btnAddEvidence").onclick = () => openEvidenceEditor(c.id, null);
+    renderList();
+  }
+
+  function evidenceEntryHTML(it){
+    const hasUrl = !!(it.url && it.url.trim());
+    return `
+      <div class="entry" data-entry-type="evidence" data-id="${escapeHtml(it.id)}">
+        <div class="eh">
+          <div class="left">
+            <div class="title">${escapeHtml(it.title || "Untitled Evidence")}</div>
+            <div class="meta">
+              ${it.type ? `<span class="chip">${escapeHtml(it.type)}</span>` : ""}
+              ${it.date_obtained ? `<span class="chip mono">${escapeHtml(fmtDate(it.date_obtained))}</span>` : ""}
+              ${it.source ? `<span class="chip">${escapeHtml(it.source)}</span>` : ""}
+            </div>
+          </div>
+          <div class="actions">
+            ${hasUrl ? `<a class="btn ghost" href="${escapeHtml(it.url)}" target="_blank" rel="noopener">Open</a>` : ""}
+            <button class="ghost" data-action="edit">Edit</button>
+            <button class="danger ghost" data-action="delete">Delete</button>
+          </div>
+        </div>
+        <div class="eb">
+          ${it.description ? `<div style="white-space:pre-wrap">${escapeHtml(it.description)}</div>` : `<div class="muted">No description.</div>`}
+          ${(it.hash || it.chain_notes) ? `
+            <div class="kv">
+              ${it.hash ? `<div class="k">Hash</div><div class="v">${escapeHtml(it.hash)}</div>` : ``}
+              ${it.chain_notes ? `<div class="k">Chain</div><div class="v">${escapeHtml(it.chain_notes)}</div>` : ``}
+            </div>` : ``}
+          ${it.notes ? `<div class="muted" style="white-space:pre-wrap">${escapeHtml(it.notes)}</div>` : ``}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderTasks(c){
+    const tasks = [...(c.tasks||[])].sort((a,b) => {
+      const pr = (x) => (x.priority === "High" ? 0 : x.priority === "Medium" ? 1 : x.priority === "Low" ? 2 : 3);
+      const pd = pr(a) - pr(b);
+      if (pd !== 0) return pd;
+      return (a.due_at || "").localeCompare(b.due_at || "");
+    });
+
+    casePaneEl.innerHTML = `
+      <div class="card" style="box-shadow:none;">
+        <div class="hd">
+          <h2>Tasks</h2>
+          <div class="actions">
+            <button class="primary" id="btnAddTask">+ Add Task</button>
+          </div>
+        </div>
+        <div class="bd">
+          <div class="row wrap" style="margin-bottom:10px">
+            <input id="taskSearch" placeholder="Search tasks…" style="flex:1; min-width:260px">
+            <select id="taskStatus" style="max-width:220px">
+              <option value="">All</option>
+              <option value="Open">Open</option>
+              <option value="Done">Done</option>
+            </select>
+            <select id="taskPriority" style="max-width:220px">
+              <option value="">All priorities</option>
+              <option>High</option>
+              <option>Medium</option>
+              <option>Low</option>
+            </select>
+          </div>
+
+          <div class="list" id="taskList">
+            ${tasks.length ? "" : `<div class="muted">No tasks yet.</div>`}
+          </div>
+        </div>
+      </div>
+    `;
+
+    const listEl = document.getElementById("taskList");
+    const searchEl = document.getElementById("taskSearch");
+    const statusEl = document.getElementById("taskStatus");
+    const prEl = document.getElementById("taskPriority");
+
+    const renderList = () => {
+      const q = searchEl.value.trim().toLowerCase();
+      const st = statusEl.value;
+      const pr = prEl.value;
+      const filtered = tasks.filter(t => {
+        if (st && t.status !== st) return false;
+        if (pr && t.priority !== pr) return false;
+        if (!q) return true;
+        const hay = [t.title, t.notes].join(" ").toLowerCase();
+        return hay.includes(q);
+      });
+
+      listEl.innerHTML = filtered.length ? "" : `<div class="muted">No matching tasks.</div>`;
+      for (const t of filtered){
+        listEl.insertAdjacentHTML("beforeend", taskEntryHTML(t));
+      }
+      attachEntryHandlers(c.id, "tasks");
+    };
+
+    searchEl.addEventListener("input", renderList);
+    statusEl.addEventListener("change", renderList);
+    prEl.addEventListener("change", renderList);
+
+    document.getElementById("btnAddTask").onclick = () => openTaskEditor(c.id, null);
+    renderList();
+  }
+
+  function taskEntryHTML(t){
+    const sevClass = t.priority === "High" ? "bad" : t.priority === "Medium" ? "warn" : "good";
+    const done = t.status === "Done";
+    return `
+      <div class="entry" data-entry-type="tasks" data-id="${escapeHtml(t.id)}">
+        <div class="eh">
+          <div class="left">
+            <div class="title">${done ? "✅ " : ""}${escapeHtml(t.title || "Untitled Task")}</div>
+            <div class="meta">
+              <span class="chip ${sevClass}">${escapeHtml(t.priority || "Low")}</span>
+              <span class="chip">${escapeHtml(t.status || "Open")}</span>
+              ${t.due_at ? `<span class="chip mono">${escapeHtml(fmtDate(t.due_at))}</span>` : ""}
+            </div>
+          </div>
+          <div class="actions">
+            <button class="ghost" data-action="toggle">${done ? "Mark Open" : "Mark Done"}</button>
+            <button class="ghost" data-action="edit">Edit</button>
+            <button class="danger ghost" data-action="delete">Delete</button>
+          </div>
+        </div>
+        <div class="eb">
+          ${t.notes ? `<div style="white-space:pre-wrap">${escapeHtml(t.notes)}</div>` : `<div class="muted">No notes.</div>`}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderContacts(c){
+    const contacts = [...(c.contacts||[])].sort((a,b)=> (a.name||"").localeCompare(b.name||""));
+    casePaneEl.innerHTML = `
+      <div class="card" style="box-shadow:none;">
+        <div class="hd">
+          <h2>Contacts</h2>
+          <div class="actions">
+            <button class="primary" id="btnAddContact">+ Add Contact</button>
+          </div>
+        </div>
+        <div class="bd">
+          <div class="row wrap" style="margin-bottom:10px">
+            <input id="contactSearch" placeholder="Search contacts…" style="flex:1; min-width:260px">
+            <select id="contactRole" style="max-width:240px">
+              <option value="">All roles</option>
+              <option>Caseworker</option>
+              <option>Agency</option>
+              <option>Attorney</option>
+              <option>Court</option>
+              <option>Other</option>
+            </select>
+          </div>
+
+          <div class="list" id="contactList">
+            ${contacts.length ? "" : `<div class="muted">No contacts yet.</div>`}
+          </div>
+        </div>
+      </div>
+    `;
+
+    const listEl = document.getElementById("contactList");
+    const searchEl = document.getElementById("contactSearch");
+    const roleEl = document.getElementById("contactRole");
+
+    const renderList = () => {
+      const q = searchEl.value.trim().toLowerCase();
+      const r = roleEl.value;
+      const filtered = contacts.filter(ct => {
+        if (r && ct.role !== r) return false;
+        if (!q) return true;
+        const hay = [ct.name, ct.role, ct.org, ct.email, ct.phone, ct.notes].join(" ").toLowerCase();
+        return hay.includes(q);
+      });
+
+      listEl.innerHTML = filtered.length ? "" : `<div class="muted">No matching contacts.</div>`;
+      for (const ct of filtered){
+        listEl.insertAdjacentHTML("beforeend", contactEntryHTML(ct));
+      }
+      attachEntryHandlers(c.id, "contacts");
+    };
+
+    searchEl.addEventListener("input", renderList);
+    roleEl.addEventListener("change", renderList);
+
+    document.getElementById("btnAddContact").onclick = () => openContactEditor(c.id, null);
+    renderList();
+  }
+
+  function contactEntryHTML(ct){
+    const parts = [];
+    if (ct.org) parts.push(ct.org);
+    if (ct.email) parts.push(ct.email);
+    if (ct.phone) parts.push(ct.phone);
+    const line = parts.join(" • ");
+    return `
+      <div class="entry" data-entry-type="contacts" data-id="${escapeHtml(ct.id)}">
+        <div class="eh">
+          <div class="left">
+            <div class="title">${escapeHtml(ct.name || "Unnamed")}</div>
+            <div class="meta">
+              ${ct.role ? `<span class="chip">${escapeHtml(ct.role)}</span>` : ""}
+              ${ct.org ? `<span class="chip">${escapeHtml(ct.org)}</span>` : ""}
+            </div>
+          </div>
+          <div class="actions">
+            ${ct.email ? `<a class="btn ghost" href="mailto:${escapeHtml(ct.email)}">Email</a>` : ""}
+            ${ct.phone ? `<a class="btn ghost" href="tel:${escapeHtml(ct.phone)}">Call</a>` : ""}
+            <button class="ghost" data-action="edit">Edit</button>
+            <button class="danger ghost" data-action="delete">Delete</button>
+          </div>
+        </div>
+        <div class="eb">
+          ${line ? `<div class="muted">${escapeHtml(line)}</div>` : ``}
+          ${ct.notes ? `<div style="white-space:pre-wrap">${escapeHtml(ct.notes)}</div>` : `<div class="muted">No notes.</div>`}
+        </div>
+      </div>
+    `;
+  }
+
+  function attachEntryHandlers(caseId, kind){
+    // kind can be "timeline", "evidence", "tasks", "contacts"
+    document.querySelectorAll(`.entry[data-entry-type="${kind}"]`).forEach(el => {
+      el.querySelectorAll("button[data-action]").forEach(btn => {
+        btn.onclick = () => {
+          const id = el.dataset.id;
+          const action = btn.dataset.action;
+          if (kind === "timeline"){
+            if (action === "edit") return openEventEditor(caseId, id);
+            if (action === "delete") return deleteEntry(caseId, "timeline", id);
+          }
+          if (kind === "evidence"){
+            if (action === "edit") return openEvidenceEditor(caseId, id);
+            if (action === "delete") return deleteEntry(caseId, "evidence", id);
+          }
+          if (kind === "tasks"){
+            if (action === "edit") return openTaskEditor(caseId, id);
+            if (action === "delete") return deleteEntry(caseId, "tasks", id);
+            if (action === "toggle") return toggleTask(caseId, id);
+          }
+          if (kind === "contacts"){
+            if (action === "edit") return openContactEditor(caseId, id);
+            if (action === "delete") return deleteEntry(caseId, "contacts", id);
+          }
+        };
+      });
+    });
+  }
+
+  // ---- Editors (modal-ish inline)
+  function openCaseEditor(caseId){
+    const editing = caseId ? getCaseById(caseId) : null;
+    const c = editing || {
+      id: uid(),
+      title: "",
+      summary: "",
+      jurisdiction: "",
+      case_number: "",
+      primary_issue: "",
+      status: "Active",
+      priority: "Medium",
+      tags: [],
+      key_questions: "",
+      opened_at: nowISO(),
+      created_at: nowISO(),
+      updated_at: nowISO(),
+      timeline: [],
+      evidence: [],
+      tasks: [],
+      contacts: []
+    };
+
+    casePaneEl.innerHTML = `
+      <div class="card" style="box-shadow:none;">
+        <div class="hd">
+          <h2>${editing ? "Edit Case" : "New Case"}</h2>
+          <div class="actions">
+            <button class="primary" id="btnSaveCase">${editing ? "Save" : "Create"}</button>
+            <button id="btnCancelCase">Cancel</button>
+          </div>
+        </div>
+        <div class="bd">
+          <div class="row" style="gap:12px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:280px" class="col">
+              <label>Title</label>
+              <input id="caseTitle" value="${escapeHtml(c.title)}" placeholder="e.g., MO FSD arrears enforcement delay" />
+            </div>
+            <div style="width:180px" class="col">
+              <label>Status</label>
+              <select id="caseStatus">
+                ${["Active","Monitoring","Escalated","Litigation","Resolved","Dormant"].map(s => `<option ${c.status===s?"selected":""}>${s}</option>`).join("")}
+              </select>
+            </div>
+            <div style="width:180px" class="col">
+              <label>Priority</label>
+              <select id="casePriority">
+                ${["High","Medium","Low"].map(p => `<option ${c.priority===p?"selected":""}>${p}</option>`).join("")}
+              </select>
+            </div>
+          </div>
+
+          <div class="row" style="gap:12px; flex-wrap:wrap; margin-top:10px">
+            <div style="flex:1; min-width:280px" class="col">
+              <label>Jurisdiction</label>
+              <input id="caseJurisdiction" value="${escapeHtml(c.jurisdiction)}" placeholder="e.g., Missouri (origin), Pennsylvania (responding)" />
+            </div>
+            <div style="flex:1; min-width:280px" class="col">
+              <label>Case / Docket #</label>
+              <input id="caseNumber" value="${escapeHtml(c.case_number)}" placeholder="Optional" />
+            </div>
+          </div>
+
+          <div class="row" style="gap:12px; flex-wrap:wrap; margin-top:10px">
+            <div style="flex:1; min-width:280px" class="col">
+              <label>Primary Issue</label>
+              <input id="caseIssue" value="${escapeHtml(c.primary_issue)}" placeholder="e.g., arrears enforcement + notice delays" />
+            </div>
+            <div style="flex:1; min-width:280px" class="col">
+              <label>Tags (comma-separated)</label>
+              <input id="caseTags" value="${escapeHtml((c.tags||[]).join(", "))}" placeholder="e.g., arrears, CSE, UIFSA, SSD/SSI" />
+            </div>
+          </div>
+
+          <div class="col" style="margin-top:10px">
+            <label>Summary</label>
+            <textarea id="caseSummary" placeholder="Short factual overview…">${escapeHtml(c.summary)}</textarea>
+          </div>
+
+          <div class="col" style="margin-top:10px">
+            <label>Key Questions / Claims to Verify</label>
+            <textarea id="caseQuestions" placeholder="List what must be proven / verified…">${escapeHtml(c.key_questions)}</textarea>
+          </div>
+
+          <div class="muted" style="margin-top:10px">
+            Note: You can keep sensitive names in initials if publishing. This app does not upload data anywhere.
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById("btnCancelCase").onclick = () => renderCasePane();
+    document.getElementById("btnSaveCase").onclick = () => {
+      c.title = document.getElementById("caseTitle").value.trim();
+      c.status = document.getElementById("caseStatus").value;
+      c.priority = document.getElementById("casePriority").value;
+      c.jurisdiction = document.getElementById("caseJurisdiction").value.trim();
+      c.case_number = document.getElementById("caseNumber").value.trim();
+      c.primary_issue = document.getElementById("caseIssue").value.trim();
+      c.tags = normalizeTags(document.getElementById("caseTags").value);
+      c.summary = document.getElementById("caseSummary").value.trim();
+      c.key_questions = document.getElementById("caseQuestions").value.trim();
+      c.updated_at = nowISO();
+
+      if (!c.title) {
+        toast("Title required");
+        return;
+      }
+
+      if (editing){
+        const idx = state.data.cases.findIndex(x => x.id === editing.id);
+        state.data.cases[idx] = c;
+      } else {
+        state.data.cases.unshift(c);
+        state.selectedCaseId = c.id;
+      }
+      save();
+      renderCaseList();
+      state.activeTab = "overview";
+      renderTabs();
+      renderCasePane();
+    };
+  }
+
+  function openEventEditor(caseId, eventId){
+    const c = getCaseById(caseId);
+    const editing = eventId ? (c.timeline||[]).find(e => e.id === eventId) : null;
+    const ev = editing || {
+      id: uid(),
+      when: nowISO(),
+      title: "",
+      type: "Agency Action",
+      severity: "Neutral",
+      who: "",
+      tags: [],
+      source: "",
+      ref: "",
+      notes: "",
+      created_at: nowISO(),
+      updated_at: nowISO()
+    };
+
+    casePaneEl.innerHTML = `
+      <div class="card" style="box-shadow:none;">
+        <div class="hd">
+          <h2>${editing ? "Edit Timeline Event" : "Add Timeline Event"}</h2>
+          <div class="actions">
+            <button class="primary" id="btnSaveEvent">${editing ? "Save" : "Add"}</button>
+            <button id="btnCancelEvent">Cancel</button>
+          </div>
+        </div>
+        <div class="bd">
+          <div class="row" style="gap:12px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:240px" class="col">
+              <label>Date/Time (ISO or use picker)</label>
+              <input id="evWhen" value="${escapeHtml(ev.when)}" placeholder="YYYY-MM-DDTHH:mm:ssZ (auto if blank)" />
+            </div>
+            <div style="width:220px" class="col">
+              <label>Type</label>
+              <select id="evType">
+                ${["Agency Action","Communication","Payment","Deadline","Hearing","Records Request","Evidence Received","Other"].map(t => `<option ${ev.type===t?"selected":""}>${t}</option>`).join("")}
+              </select>
+            </div>
+            <div style="width:220px" class="col">
+              <label>Severity</label>
+              <select id="evSeverity">
+                ${["Neutral","Low","Medium","High"].map(s => `<option ${ev.severity===s?"selected":""}>${s}</option>`).join("")}
+              </select>
+            </div>
+          </div>
+
+          <div class="row" style="gap:12px; flex-wrap:wrap; margin-top:10px;">
+            <div style="flex:1; min-width:260px" class="col">
+              <label>Title</label>
+              <input id="evTitle" value="${escapeHtml(ev.title)}" placeholder="What happened?" />
+            </div>
+            <div style="flex:1; min-width:260px" class="col">
+              <label>Who (optional)</label>
+              <input id="evWho" value="${escapeHtml(ev.who)}" placeholder="Agency/person (e.g., MO FSD, PA DRS, caseworker name)" />
+            </div>
+          </div>
+
+          <div class="row" style="gap:12px; flex-wrap:wrap; margin-top:10px;">
+            <div style="flex:1; min-width:260px" class="col">
+              <label>Tags (comma-separated)</label>
+              <input id="evTags" value="${escapeHtml((ev.tags||[]).join(", "))}" placeholder="arrears, notice, postmark, SSD, SSI, UIFSA" />
+            </div>
+            <div style="flex:1; min-width:260px" class="col">
+              <label>Source / Channel</label>
+              <input id="evSource" value="${escapeHtml(ev.source)}" placeholder="mail, email, phone call, portal message…" />
+            </div>
+          </div>
+
+          <div class="row" style="gap:12px; flex-wrap:wrap; margin-top:10px;">
+            <div style="flex:1; min-width:260px" class="col">
+              <label>Reference (optional)</label>
+              <input id="evRef" value="${escapeHtml(ev.ref)}" placeholder="Notice #, letter date, tracking #, docket ref…" />
+            </div>
+          </div>
+
+          <div class="col" style="margin-top:10px">
+            <label>Notes (factual)</label>
+            <textarea id="evNotes" placeholder="Stick to facts. Dates. Postmarks. What was said. What was received.">${escapeHtml(ev.notes)}</textarea>
+          </div>
+
+          <div class="muted" style="margin-top:10px">
+            Tip: For mail, include: document date, postmark(s), delivery date, and contents summarized.
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById("btnCancelEvent").onclick = () => { state.activeTab="timeline"; renderTabs(); renderCasePane(); };
+    document.getElementById("btnSaveEvent").onclick = () => {
+      ev.when = document.getElementById("evWhen").value.trim() || nowISO();
+      ev.type = document.getElementById("evType").value;
+      ev.severity = document.getElementById("evSeverity").value;
+      ev.title = document.getElementById("evTitle").value.trim();
+      ev.who = document.getElementById("evWho").value.trim();
+      ev.tags = normalizeTags(document.getElementById("evTags").value);
+      ev.source = document.getElementById("evSource").value.trim();
+      ev.ref = document.getElementById("evRef").value.trim();
+      ev.notes = document.getElementById("evNotes").value.trim();
+      ev.updated_at = nowISO();
+
+      if (!ev.title) return toast("Title required");
+
+      c.timeline = c.timeline || [];
+      if (editing){
+        const idx = c.timeline.findIndex(x => x.id === editing.id);
+        c.timeline[idx] = ev;
+      } else {
+        c.timeline.push(ev);
+      }
+      c.updated_at = nowISO();
+      save();
+      state.activeTab="timeline";
+      renderTabs();
+      renderCaseList();
+      renderCasePane();
+    };
+  }
+
+  function openEvidenceEditor(caseId, evidenceId){
+    const c = getCaseById(caseId);
+    const editing = evidenceId ? (c.evidence||[]).find(e => e.id === evidenceId) : null;
+    const it = editing || {
+      id: uid(),
+      type: "Letter",
+      title: "",
+      description: "",
+      url: "",
+      source: "",
+      date_obtained: nowISO(),
+      hash: "",
+      chain_notes: "",
+      notes: "",
+      created_at: nowISO(),
+      updated_at: nowISO()
+    };
+
+    casePaneEl.innerHTML = `
+      <div class="card" style="box-shadow:none;">
+        <div class="hd">
+          <h2>${editing ? "Edit Evidence" : "Add Evidence"}</h2>
+          <div class="actions">
+            <button class="primary" id="btnSaveEvidence">${editing ? "Save" : "Add"}</button>
+            <button id="btnCancelEvidence">Cancel</button>
+          </div>
+        </div>
+        <div class="bd">
+          <div class="row" style="gap:12px; flex-wrap:wrap;">
+            <div style="width:240px" class="col">
+              <label>Type</label>
+              <select id="evdType">
+                ${["Letter","Envelope/Postmark","Email","Call Log","Screenshot","PDF","Filing","Payment Record","Other"].map(t => `<option ${it.type===t?"selected":""}>${t}</option>`).join("")}
+              </select>
+            </div>
+            <div style="flex:1; min-width:260px" class="col">
+              <label>Title</label>
+              <input id="evdTitle" value="${escapeHtml(it.title)}" placeholder="e.g., MO FSD Notice of Action Taken" />
+            </div>
+          </div>
+
+          <div class="row" style="gap:12px; flex-wrap:wrap; margin-top:10px;">
+            <div style="flex:1; min-width:260px" class="col">
+              <label>URL (optional)</label>
+              <input id="evdUrl" value="${escapeHtml(it.url)}" placeholder="Link to stored PDF/image (Drive/Dropbox/etc)" />
+            </div>
+            <div style="width:260px" class="col">
+              <label>Date Obtained</label>
+              <input id="evdObtained" value="${escapeHtml(it.date_obtained)}" placeholder="ISO date/time" />
+            </div>
+          </div>
+
+          <div class="row" style="gap:12px; flex-wrap:wrap; margin-top:10px;">
+            <div style="flex:1; min-width:260px" class="col">
+              <label>Source</label>
+              <input id="evdSource" value="${escapeHtml(it.source)}" placeholder="mail, email, portal, etc." />
+            </div>
+            <div style="flex:1; min-width:260px" class="col">
+              <label>Hash (optional)</label>
+              <input id="evdHash" value="${escapeHtml(it.hash)}" placeholder="SHA-256 or other hash for chain-of-custody" />
+            </div>
+          </div>
+
+          <div class="col" style="margin-top:10px">
+            <label>Description</label>
+            <textarea id="evdDesc" placeholder="What is it? What does it show?">${escapeHtml(it.description)}</textarea>
+          </div>
+
+          <div class="col" style="margin-top:10px">
+            <label>Chain Notes (optional)</label>
+            <textarea id="evdChain" placeholder="Where stored, how obtained, any handling notes…">${escapeHtml(it.chain_notes)}</textarea>
+          </div>
+
+          <div class="col" style="margin-top:10px">
+            <label>Notes (optional)</label>
+            <textarea id="evdNotes" placeholder="Anything else…">${escapeHtml(it.notes)}</textarea>
+          </div>
+
+          <div class="muted" style="margin-top:10px">
+            For mail: put document date + postmark date(s) + delivery date in Description.
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById("btnCancelEvidence").onclick = () => { state.activeTab="evidence"; renderTabs(); renderCasePane(); };
+    document.getElementById("btnSaveEvidence").onclick = () => {
+      it.type = document.getElementById("evdType").value;
+      it.title = document.getElementById("evdTitle").value.trim();
+      it.url = document.getElementById("evdUrl").value.trim();
+      it.date_obtained = document.getElementById("evdObtained").value.trim() || nowISO();
+      it.source = document.getElementById("evdSource").value.trim();
+      it.hash = document.getElementById("evdHash").value.trim();
+      it.description = document.getElementById("evdDesc").value.trim();
+      it.chain_notes = document.getElementById("evdChain").value.trim();
+      it.notes = document.getElementById("evdNotes").value.trim();
+      it.updated_at = nowISO();
+
+      if (!it.title) return toast("Title required");
+
+      c.evidence = c.evidence || [];
+      if (editing){
+        const idx = c.evidence.findIndex(x => x.id === editing.id);
+        c.evidence[idx] = it;
+      } else {
+        c.evidence.push(it);
+      }
+      c.updated_at = nowISO();
+      save();
+      state.activeTab="evidence";
+      renderTabs();
+      renderCaseList();
+      renderCasePane();
+    };
+  }
+
+  function openTaskEditor(caseId, taskId){
+    const c = getCaseById(caseId);
+    const editing = taskId ? (c.tasks||[]).find(t => t.id === taskId) : null;
+    const t = editing || {
+      id: uid(),
+      title: "",
+      notes: "",
+      status: "Open",
+      priority: "Medium",
+      due_at: "",
+      created_at: nowISO(),
+      updated_at: nowISO()
+    };
+
+    casePaneEl.innerHTML = `
+      <div class="card" style="box-shadow:none;">
+        <div class="hd">
+          <h2>${editing ? "Edit Task" : "Add Task"}</h2>
+          <div class="actions">
+            <button class="primary" id="btnSaveTask">${editing ? "Save" : "Add"}</button>
+            <button id="btnCancelTask">Cancel</button>
+          </div>
+        </div>
+        <div class="bd">
+          <div class="row" style="gap:12px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:260px" class="col">
+              <label>Title</label>
+              <input id="taskTitle" value="${escapeHtml(t.title)}" placeholder="e.g., Request written accounting from PA DRS" />
+            </div>
+            <div style="width:220px" class="col">
+              <label>Status</label>
+              <select id="taskStatusEdit">
+                ${["Open","Done"].map(s => `<option ${t.status===s?"selected":""}>${s}</option>`).join("")}
+              </select>
+            </div>
+            <div style="width:220px" class="col">
+              <label>Priority</label>
+              <select id="taskPriorityEdit">
+                ${["High","Medium","Low"].map(p => `<option ${t.priority===p?"selected":""}>${p}</option>`).join("")}
+              </select>
+            </div>
+          </div>
+
+          <div class="row" style="gap:12px; flex-wrap:wrap; margin-top:10px;">
+            <div style="width:260px" class="col">
+              <label>Due (optional ISO)</label>
+              <input id="taskDue" value="${escapeHtml(t.due_at)}" placeholder="YYYY-MM-DDTHH:mm:ssZ" />
+            </div>
+          </div>
+
+          <div class="col" style="margin-top:10px">
+            <label>Notes</label>
+            <textarea id="taskNotes" placeholder="What outcome do you want? What docs will prove it?">${escapeHtml(t.notes)}</textarea>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById("btnCancelTask").onclick = () => { state.activeTab="tasks"; renderTabs(); renderCasePane(); };
+    document.getElementById("btnSaveTask").onclick = () => {
+      t.title = document.getElementById("taskTitle").value.trim();
+      t.status = document.getElementById("taskStatusEdit").value;
+      t.priority = document.getElementById("taskPriorityEdit").value;
+      t.due_at = document.getElementById("taskDue").value.trim();
+      t.notes = document.getElementById("taskNotes").value.trim();
+      t.updated_at = nowISO();
+
+      if (!t.title) return toast("Title required");
+
+      c.tasks = c.tasks || [];
+      if (editing){
+        const idx = c.tasks.findIndex(x => x.id === editing.id);
+        c.tasks[idx] = t;
+      } else {
+        c.tasks.push(t);
+      }
+      c.updated_at = nowISO();
+      save();
+      state.activeTab="tasks";
+      renderTabs();
+      renderCaseList();
+      renderCasePane();
+    };
+  }
+
+  function openContactEditor(caseId, contactId){
+    const c = getCaseById(caseId);
+    const editing = contactId ? (c.contacts||[]).find(x => x.id === contactId) : null;
+    const ct = editing || {
+      id: uid(),
+      name: "",
+      role: "Agency",
+      org: "",
+      email: "",
+      phone: "",
+      notes: "",
+      created_at: nowISO(),
+      updated_at: nowISO()
+    };
+
+    casePaneEl.innerHTML = `
+      <div class="card" style="box-shadow:none;">
+        <div class="hd">
+          <h2>${editing ? "Edit Contact" : "Add Contact"}</h2>
+          <div class="actions">
+            <button class="primary" id="btnSaveContact">${editing ? "Save" : "Add"}</button>
+            <button id="btnCancelContact">Cancel</button>
+          </div>
+        </div>
+        <div class="bd">
+          <div class="row" style="gap:12px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:260px" class="col">
+              <label>Name</label>
+              <input id="ctName" value="${escapeHtml(ct.name)}" placeholder="Name or office" />
+            </div>
+            <div style="width:220px" class="col">
+              <label>Role</label>
+              <select id="ctRole">
+                ${["Caseworker","Agency","Attorney","Court","Other"].map(r => `<option ${ct.role===r?"selected":""}>${r}</option>`).join("")}
+              </select>
+            </div>
+          </div>
+
+          <div class="row" style="gap:12px; flex-wrap:wrap; margin-top:10px;">
+            <div style="flex:1; min-width:260px" class="col">
+              <label>Organization</label>
+              <input id="ctOrg" value="${escapeHtml(ct.org)}" placeholder="MO FSD, PA DRS, etc." />
+            </div>
+            <div style="flex:1; min-width:260px" class="col">
+              <label>Email</label>
+              <input id="ctEmail" value="${escapeHtml(ct.email)}" placeholder="email@example.com" />
+            </div>
+          </div>
+
+          <div class="row" style="gap:12px; flex-wrap:wrap; margin-top:10px;">
+            <div style="flex:1; min-width:260px" class="col">
+              <label>Phone</label>
+              <input id="ctPhone" value="${escapeHtml(ct.phone)}" placeholder="(###) ###-####" />
+            </div>
+          </div>
+
+          <div class="col" style="margin-top:10px">
+            <label>Notes</label>
+            <textarea id="ctNotes" placeholder="Notes, best contact channel, office hours, etc.">${escapeHtml(ct.notes)}</textarea>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById("btnCancelContact").onclick = () => { state.activeTab="contacts"; renderTabs(); renderCasePane(); };
+    document.getElementById("btnSaveContact").onclick = () => {
+      ct.name = document.getElementById("ctName").value.trim();
+      ct.role = document.getElementById("ctRole").value;
+      ct.org = document.getElementById("ctOrg").value.trim();
+      ct.email = document.getElementById("ctEmail").value.trim();
+      ct.phone = document.getElementById("ctPhone").value.trim();
+      ct.notes = document.getElementById("ctNotes").value.trim();
+      ct.updated_at = nowISO();
+
+      if (!ct.name) return toast("Name required");
+
+      c.contacts = c.contacts || [];
+      if (editing){
+        const idx = c.contacts.findIndex(x => x.id === editing.id);
+        c.contacts[idx] = ct;
+      } else {
+        c.contacts.push(ct);
+      }
+      c.updated_at = nowISO();
+      save();
+      state.activeTab="contacts";
+      renderTabs();
+      renderCaseList();
+      renderCasePane();
+    };
+  }
+
+  // ---- Mutations
+  function addTimelineEvent(caseId, partial){
+    const c = getCaseById(caseId);
+    const ev = {
+      id: uid(),
+      when: partial.when || nowISO(),
+      title: partial.title || "",
+      type: partial.type || "Other",
+      severity: partial.severity || "Neutral",
+      who: partial.who || "",
+      tags: partial.tags || [],
+      source: partial.source || "",
+      ref: partial.ref || "",
+      notes: partial.notes || "",
+      created_at: nowISO(),
+      updated_at: nowISO()
+    };
+    c.timeline = c.timeline || [];
+    c.timeline.push(ev);
+    c.updated_at = nowISO();
+    save();
+  }
+
+  function deleteEntry(caseId, kind, entryId){
+    const c = getCaseById(caseId);
+    if (!confirm("Delete this entry?")) return;
+    c[kind] = (c[kind] || []).filter(x => x.id !== entryId);
+    c.updated_at = nowISO();
+    save();
+    renderCasePane();
+  }
+
+  function toggleTask(caseId, taskId){
+    const c = getCaseById(caseId);
+    const t = (c.tasks||[]).find(x => x.id === taskId);
+    if (!t) return;
+    t.status = (t.status === "Done") ? "Open" : "Done";
+    t.updated_at = nowISO();
+    c.updated_at = nowISO();
+    save();
+    renderCasePane();
+  }
+
+  function duplicateCase(caseId){
+    const c = getCaseById(caseId);
+    if (!c) return;
+    const copy = JSON.parse(JSON.stringify(c));
+    copy.id = uid();
+    copy.title = `${c.title} (Copy)`;
+    copy.created_at = nowISO();
+    copy.updated_at = nowISO();
+    // new IDs for entries
+    for (const arrName of ["timeline","evidence","tasks","contacts"]){
+      copy[arrName] = (copy[arrName]||[]).map(x => ({...x, id: uid(), created_at: nowISO(), updated_at: nowISO()}));
+    }
+    state.data.cases.unshift(copy);
+    state.selectedCaseId = copy.id;
+    save();
+    renderCaseList();
+    state.activeTab="overview";
+    renderTabs();
+    renderCasePane();
+  }
+
+  function deleteCase(caseId){
+    const c = getCaseById(caseId);
+    if (!c) return;
+    const ok = confirm(`Delete case "${c.title}"? This cannot be undone (unless you exported JSON).`);
+    if (!ok) return;
+    state.data.cases = state.data.cases.filter(x => x.id !== caseId);
+    if (state.selectedCaseId === caseId){
+      state.selectedCaseId = state.data.cases[0]?.id || null;
+    }
+    save();
+    renderCaseList();
+    renderCasePane();
+  }
+
+  function computeStats(c){
+    const events = (c.timeline||[]).length;
+    const evidence = (c.evidence||[]).length;
+    const tasks = c.tasks||[];
+    const tasks_done = tasks.filter(t => t.status === "Done").length;
+    const tasks_total = tasks.length;
+    const open = tasks.filter(t => t.status !== "Done");
+    open.sort((a,b) => {
+      const pr = (x) => (x.priority === "High" ? 0 : x.priority === "Medium" ? 1 : x.priority === "Low" ? 2 : 3);
+      const pd = pr(a) - pr(b);
+      if (pd !== 0) return pd;
+      return (a.due_at || "9999").localeCompare(b.due_at || "9999");
+    });
+    return { events, evidence, tasks_done, tasks_total, next_task: open[0] || null };
+  }
+
+  // ---- Import/Export
+  function exportJSON(){
+    const blob = new Blob([JSON.stringify(state.data, null, 2)], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    download(url, `investigation_tracker_backup_${new Date().toISOString().slice(0,10)}.json`);
+    toast("Exported JSON");
+  }
+
+  function importJSON(ev){
+    const file = ev.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try{
+        const data = JSON.parse(reader.result);
+        if (!data || typeof data !== "object" || !Array.isArray(data.cases)) {
+          toast("Invalid JSON format");
+          return;
+        }
+        // basic normalization
+        for (const c of data.cases){
+          c.id = c.id || uid();
+          c.title = c.title || "Untitled Case";
+          c.status = c.status || "Active";
+          c.priority = c.priority || "Medium";
+          c.tags = Array.isArray(c.tags) ? c.tags : [];
+          for (const k of ["timeline","evidence","tasks","contacts"]){
+            if (!Array.isArray(c[k])) c[k] = [];
+            c[k] = c[k].map(x => ({ id: x.id || uid(), ...x }));
+          }
+        }
+        state.data = data;
+        state.selectedCaseId = state.data.cases[0]?.id || null;
+        save();
+        render();
+        toast("Imported JSON");
+      } catch {
+        toast("Failed to import JSON");
+      } finally {
+        ev.target.value = "";
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  function exportCSV(){
+    // Two CSVs in one zip would be ideal, but we keep it dependency-free:
+    // We'll create one CSV with a "type" column for events & evidence.
+    const rows = [];
+    rows.push([
+      "record_type","case_title","case_id",
+      "entry_id","entry_date","entry_kind","severity_or_evidence_type","title",
+      "who_or_source","reference","url","hash","notes_or_description"
+    ]);
+
+    for (const c of state.data.cases){
+      for (const ev of (c.timeline||[])){
+        rows.push([
+          "timeline", c.title, c.id,
+          ev.id, ev.when, ev.type, ev.severity,
+          ev.title, ev.who, ev.ref, "", "", (ev.notes||"").replaceAll("\n","\\n")
+        ]);
+      }
+      for (const it of (c.evidence||[])){
+        rows.push([
+          "evidence", c.title, c.id,
+          it.id, it.date_obtained, it.type, it.type,
+          it.title, it.source, "", it.url, it.hash, (it.description||"").replaceAll("\n","\\n")
+        ]);
+      }
+    }
+
+    const csv = rows.map(r => r.map(v => `"${String(v??"").replaceAll('"','""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], {type:"text/csv"});
+    const url = URL.createObjectURL(blob);
+    download(url, `investigation_tracker_export_${new Date().toISOString().slice(0,10)}.csv`);
+    toast("Exported CSV");
+  }
+
+  function download(url, filename){
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 500);
+  }
+
+  function resetAll(){
+    const ok = confirm("This will delete ALL local Investigation Tracker data from this browser. Export JSON first if you want a backup. Continue?");
+    if (!ok) return;
+    localStorage.removeItem(STORAGE_KEY);
+    state.data = defaultData();
+    state.selectedCaseId = null;
+    state.activeTab = "overview";
+    render();
+    toast("Local data reset");
+  }
+
+  // ---- Boot: seed if empty (optional)
+  function ensureSeed(){
+    if (state.data.cases.length) return;
+
+    const seed = {
+      id: uid(),
+      title: "Sample Case (delete me)",
+      summary: "Use this app to log events, evidence, tasks, and contacts. Export JSON for backups.",
+      jurisdiction: "Example: State A (origin), State B (responding)",
+      case_number: "Optional",
+      primary_issue: "Administrative delay / enforcement",
+      status: "Active",
+      priority: "Medium",
+      tags: ["sample","how-to"],
+      key_questions: "What enforcement actions occurred each month?\nWhat notice dates vs delivery dates exist?\nWhat documents prove action or inaction?",
+      opened_at: nowISO(),
+      created_at: nowISO(),
+      updated_at: nowISO(),
+      timeline: [
+        {
+          id: uid(),
+          when: nowISO(),
+          title: "Log your first event",
+          type: "Other",
+          severity: "Neutral",
+          who: "",
+          tags: ["starter"],
+          source: "app",
+          ref: "",
+          notes: "Keep it factual. Date, who, what happened, what you received, what you were told.",
+          created_at: nowISO(),
+          updated_at: nowISO()
+        }
+      ],
+      evidence: [
+        {
+          id: uid(),
+          type: "PDF",
+          title: "Link to stored documents",
+          description: "Store originals in Drive/Dropbox/etc and link here. Add a hash if needed.",
+          url: "",
+          source: "external storage",
+          date_obtained: nowISO(),
+          hash: "",
+          chain_notes: "",
+          notes: "",
+          created_at: nowISO(),
+          updated_at: nowISO()
+        }
+      ],
+      tasks: [
+        {
+          id: uid(),
+          title: "Add your real case",
+          notes: "Click New Case and create your first real case entry.",
+          status: "Open",
+          priority: "High",
+          due_at: "",
+          created_at: nowISO(),
+          updated_at: nowISO()
+        }
+      ],
+      contacts: []
+    };
+
+    state.data.cases.push(seed);
+    state.selectedCaseId = seed.id;
+    save();
+  }
+
+  ensureSeed();
+  render();
+})();
+</script>
+</body>
+</html>
